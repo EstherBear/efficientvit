@@ -472,6 +472,8 @@ class UViT(nn.Module):
             generator=generator,
             device=device,
         )
+        print(samples.shape)
+        print(self.cfg)
 
         if self.cfg.eval_scheduler == "DPM_Solver":
             N = self.eval_scheduler.total_N

@@ -5,7 +5,7 @@ from huggingface_hub import PyTorchModelHubMixin
 from omegaconf import OmegaConf
 
 from efficientvit.diffusioncore.evaluator import Evaluator, EvaluatorConfig
-from efficientvit.diffusioncore.models.dit import dc_ae_dit_xl_in_512px
+from efficientvit.diffusioncore.models.dit_diffunc import dc_ae_dit_xl_in_512px
 from efficientvit.diffusioncore.models.uvit import dc_ae_uvit_2b_in_512px, dc_ae_uvit_h_in_512px, dc_ae_uvit_s_in_512px
 
 __all__ = ["create_dc_ae_diffusion_model", "DCAE_Diffusion_HF"]
@@ -85,7 +85,7 @@ def create_dc_ae_diffusion_model_cfg(name: str, pretrained_path: Optional[str] =
 class DCAE_Diffusion_HF(nn.Module, PyTorchModelHubMixin):
     def __init__(self, model_name: str):
         super().__init__()
-        cfg = create_dc_ae_diffusion_model_cfg(model_name)
+        cfg = create_dc_ae_diffusion_model_cfg(model_name, "/home/lqr/dev/diffunc-tinyML/model/unconditional_step_8000.pt")
         evaluator = Evaluator(cfg)
         self.autoencoder, self.diffusion_model, self.scaling_factor = (
             evaluator.autoencoder,

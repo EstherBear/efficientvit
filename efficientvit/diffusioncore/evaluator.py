@@ -22,7 +22,7 @@ from efficientvit.apps.utils.dist import (
     is_master,
 )
 from efficientvit.diffusioncore.data_provider.sample_class import SampleClassDataProvider, SampleClassDataProviderConfig
-from efficientvit.diffusioncore.models.dit import DiT, DiTConfig
+from efficientvit.diffusioncore.models.dit_diffunc import DiT, DiTConfig
 from efficientvit.diffusioncore.models.uvit import UViT, UViTConfig
 from efficientvit.models.utils.network import get_dtype_from_str, is_parallel
 
@@ -35,7 +35,7 @@ class EvaluatorConfig:
     seed: int = 0
     allow_tf32: bool = True
 
-    resolution: int = 512
+    resolution: int = 128
     amp: str = "fp32"
     cfg_scale: float = 1.0
     evaluate_split: str = "test"
@@ -68,6 +68,7 @@ class EvaluatorConfig:
 class Evaluator:
     def __init__(self, cfg: EvaluatorConfig):
         self.cfg = cfg
+        print(cfg)
         self.setup_dist_env()
         self.setup_seed()
 
@@ -85,6 +86,7 @@ class Evaluator:
                 self.autoencoder = DCAE_HF.from_pretrained(f"mit-han-lab/{cfg.autoencoder}").to(
                     device=device, dtype=dtype
                 )
+                print(f"Loaded {cfg.autoencoder} from Hugging Face")
                 assert cfg.scaling_factor is not None
             elif cfg.autoencoder in ["stabilityai/sd-vae-ft-ema", "flux-vae"]:
                 self.autoencoder = AutoencoderKL(cfg.autoencoder).to(device=device, dtype=dtype)

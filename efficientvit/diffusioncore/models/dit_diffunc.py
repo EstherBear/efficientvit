@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from timm.models.vision_transformer import Attention, Mlp, PatchEmbed
 
-from efficientvit.diffusioncore.models.dit_sampler import create_diffusion
+from efficientvit.diffusioncore.models.dit_sampler_diffunc import create_diffusion, Conditioner, L2Objective
 from efficientvit.models.utils.network import get_device
 
 __all__ = ["DiTConfig", "DiT", "dc_ae_dit_xl_in_512px"]
@@ -29,7 +29,7 @@ class DiTConfig:
     class_dropout_prob: float = 0.1
     num_classes: int = 1000
     learn_sigma: bool = True
-    unconditional: bool = False
+    unconditional: bool = True
     use_checkpoint: bool = True
 
     pretrained_path: Optional[str] = None
@@ -233,6 +233,8 @@ class DiT(nn.Module):
     def __init__(self, cfg: DiTConfig):
         super().__init__()
         self.cfg = cfg
+        print(f"DiT config: {cfg}")
+        self.cfg.input_size = cfg.input_size
 
         self.out_channels = cfg.in_channels * 2 if cfg.learn_sigma else cfg.in_channels
 
@@ -258,7 +260,7 @@ class DiT(nn.Module):
 
         # scheduler
         if cfg.eval_scheduler == "GaussianDiffusion":
-            self.eval_scheduler = create_diffusion(str(250))
+            self.eval_scheduler = create_diffusion("")
         elif cfg.eval_scheduler == "UniPC":
             self.eval_scheduler = diffusers.UniPCMultistepScheduler(
                 solver_order=3,
@@ -283,6 +285,7 @@ class DiT(nn.Module):
                 checkpoint = checkpoint["ema"]
             self.load_state_dict(checkpoint)
         elif self.cfg.pretrained_source == "dc-ae":
+            print(f"Loading from {self.cfg.pretrained_path}")
             checkpoint = list(checkpoint["ema"].values())[0]
             self.get_trainable_modules().load_state_dict(checkpoint)
         else:
@@ -402,6 +405,7 @@ class DiT(nn.Module):
     def generate(
         self, inputs, null_inputs, scale: float = 1.5, generator: Optional[torch.Generator] = None, progress=False
     ):
+        # breakpoint()
         device = get_device(self)
         samples = torch.randn(
             (inputs.shape[0], self.cfg.in_channels, self.cfg.input_size, self.cfg.input_size),
@@ -410,19 +414,30 @@ class DiT(nn.Module):
         )
 
         if scale != 1.0:
-            assert null_inputs is not None
+            # assert null_inputs is not None
             samples = torch.cat([samples, samples], dim=0)
-            inputs = torch.cat([inputs, null_inputs], dim=0)
+            # inputs = torch.cat([inputs, null_inputs], dim=0)
             if self.cfg.eval_scheduler == "GaussianDiffusion":
-                model_kwargs = dict(y=inputs, cfg_scale=scale)
+                model_kwargs = dict(y=None, cfg_scale=scale)
+                cond_fn = Conditioner(
+                    diffusion=self.eval_scheduler,
+                    objectives=[
+                        L2Objective(guidance_scale=1e4),
+                    ],
+                    apply_p_transform=True,
+                )
+                cond_fn = None
+                guidance_kwargs = dict(x_targ=inputs)
                 samples = self.eval_scheduler.p_sample_loop(
                     self.forward_with_cfg,
                     samples.shape,
                     samples,
                     clip_denoised=False,
                     model_kwargs=model_kwargs,
+                    guidance_kwargs=guidance_kwargs,
                     progress=progress,
                     device=device,
+                    cond_fn=cond_fn,
                 )
             elif self.cfg.eval_scheduler == "UniPC":
                 self.eval_scheduler.set_timesteps(num_inference_steps=self.cfg.num_inference_steps)
@@ -438,14 +453,25 @@ class DiT(nn.Module):
         else:
             if self.cfg.eval_scheduler == "GaussianDiffusion":
                 model_kwargs = dict(y=inputs)
+                cond_fn = None
+                cond_fn = Conditioner(
+                    diffusion=self.eval_scheduler,
+                    objectives=[
+                        L2Objective(guidance_scale=600),
+                    ],
+                    apply_p_transform=True,
+                )
+                guidance_kwargs = dict(x_targ=inputs)
                 samples = self.eval_scheduler.p_sample_loop(
                     self.forward_without_cfg,
                     samples.shape,
                     samples,
                     clip_denoised=False,
                     model_kwargs=model_kwargs,
+                    guidance_kwargs=guidance_kwargs,
                     progress=progress,
                     device=device,
+                    cond_fn=cond_fn,
                 )
             elif self.cfg.eval_scheduler == "UniPC":
                 self.eval_scheduler.set_timesteps(num_inference_steps=self.cfg.num_inference_steps)
